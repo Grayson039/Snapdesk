@@ -82,6 +82,11 @@ const f = (x, y) => [(x * 7) % 256, (y * 5) % 256, ((x + y) * 3) % 256];
   ok(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered('ScrollLock') && !globalShortcut.isRegistered('PrintScreen')), 'old key released, new key held');
   ok(await app.evaluate(() => global.__snapdeskTest.settings.startup === true), 'start-with-Windows defaults on at first run');
 
+  // ---- Windows PrintScreen switch: parser + the command only ever uses fixed arguments ----
+  ok(await app.evaluate(() => global.__snapdeskTest.parseRegDword('    PrintScreenKeyForSnippingEnabled    REG_DWORD    0x0') === 0), 'registry parser reads 0');
+  ok(await app.evaluate(() => global.__snapdeskTest.parseRegDword('    PrintScreenKeyForSnippingEnabled    REG_DWORD    0x1') === 1), 'registry parser reads 1');
+  ok(await app.evaluate(() => global.__snapdeskTest.parseRegDword('ERROR: The system was unable to find the specified registry key') === null), 'registry parser handles a missing value');
+  ok(!/execFile\([^)]*(settings|process\.argv|ipcMain)/.test(require('fs').readFileSync(path.join(ROOT, 'main.js'), 'utf8')), 'no user-controlled input reaches the registry command');
   ok(errs.length === 0, 'no renderer errors ' + errs.join(' | '));
   console.log(`\n${pass} passed, ${fail} failed`);
   await app.close(); await br.close(); process.exit(fail ? 1 : 0);

@@ -1,7 +1,7 @@
 ; Snapdesk per-user installer. Build: NSISDIR=<nsis> makensis tools/installer.nsi   (see tools/build-installer.sh)
 Unicode true
 !define APP "Snapdesk"
-!define VERSION "2.1.2"
+!define VERSION "2.2.0"
 !define UNKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapdesk"
 
 SetCompressor /SOLID lzma

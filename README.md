@@ -15,6 +15,9 @@ Free, offline screenshot capture and annotation for Windows. Built on Electron; 
 
 ## Privacy
 No network access: every http(s)/ws request is cancelled in the app's network layer, and no remote page is ever loaded.
+The one system change it can make is, with your permission, switching off Windows' own PrintScreen-opens-Snipping-Tool setting
+(a per-user registry value, same as Settings > Accessibility > Keyboard). It runs `reg.exe` with fixed arguments only, asks first,
+needs no administrator rights, and the tray menu can give the key back.
 The editor window has no Node access (context isolation + sandbox) and talks to the app through six narrow functions.
 
 ## Build (on any machine with Node)

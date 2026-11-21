@@ -3,6 +3,7 @@
 // copy/save files you ask it to, and sit in the tray. It makes no network requests.
 const { app, BrowserWindow, Tray, Menu, globalShortcut, desktopCapturer, screen, ipcMain, clipboard, nativeImage, dialog, shell, session } = require('electron');
 const path = require('path');
+const { execFile } = require('child_process');
 const fs = require('fs');
 
 const TEST = process.env.SNAPDESK_TEST === '1';
@@ -173,6 +174,34 @@ function printScreenHelp() {
     detail: 'Windows opens its own Snipping Tool when you press PrintScreen. To let Snapdesk have the key, turn that off:\n\nSettings > Accessibility > Keyboard > \"Use the Print screen button to open screen capture\" > Off.\n\nSnapdesk notices the change within a few seconds, so no restart is needed. If PrintScreen still will not work on your keyboard, pick another key from the tray menu under \"Capture key\".'
   }).then((r) => { if (r.response === 0) shell.openExternal('ms-settings:easeofaccess-keyboard'); }).catch(() => {});
 }
+// ---------- Windows' own PrintScreen shortcut (a per-user switch; Settings > Accessibility > Keyboard) ----------
+const SNIP_KEY = 'HKCU\\Control Panel\\Keyboard', SNIP_VAL = 'PrintScreenKeyForSnippingEnabled';
+function parseRegDword(out) { const m = /REG_DWORD\s+0x([0-9a-fA-F]+)/.exec(String(out || '')); return m ? parseInt(m[1], 16) : null; }
+function regRun(args) { return new Promise((resolve) => execFile('reg', args, { windowsHide: true, timeout: 8000 }, (err, stdout) => resolve({ ok: !err, out: stdout }))); }
+// fixed arguments only: nothing from the user or the network ever reaches this command
+async function windowsSnipEnabled() { if (process.platform !== 'win32') return null; const r = await regRun(['query', SNIP_KEY, '/v', SNIP_VAL]); return r.ok ? parseRegDword(r.out) : null; }
+async function setWindowsSnip(enabled) {
+  if (process.platform !== 'win32') return false;
+  const r = await regRun(['add', SNIP_KEY, '/v', SNIP_VAL, '/t', 'REG_DWORD', '/d', enabled ? '1' : '0', '/f']);
+  if (r.ok) { settings.windowsSnipChangedByUs = !enabled; saveSettings(); if (!enabled) setExtraKey(settings.extraKey); }
+  refreshTray(); return r.ok;
+}
+async function offerPrintScreen(force) {
+  if (process.platform !== 'win32' || TEST) return;
+  const snip = await windowsSnipEnabled();
+  if (snip === 0) return; // Windows already lets apps use PrintScreen
+  if (!force && settings.askedPrintScreen) return;
+  settings.askedPrintScreen = true; saveSettings();
+  const r = await dialog.showMessageBox({
+    type: 'question', title: 'Use PrintScreen with Snapdesk?', buttons: ['Yes, use PrintScreen', 'Not now'], defaultId: 0, cancelId: 1,
+    message: 'Let Snapdesk have the PrintScreen key?',
+    detail: 'Right now Windows uses PrintScreen to open its own Snipping Tool.\n\nSnapdesk can switch that off for you. It is the same switch as Settings > Accessibility > Keyboard > "Use the Print screen button to open screen capture". It only changes your own Windows account, needs no administrator rights, and you can give the key back any time from the Snapdesk tray menu.'
+  });
+  if (r.response === 0) {
+    const ok = await setWindowsSnip(false);
+    if (!ok) dialog.showMessageBox({ type: 'warning', title: 'Snapdesk', message: 'Windows did not allow the change.', detail: 'You can switch it off yourself: Settings > Accessibility > Keyboard > "Use the Print screen button to open screen capture" > Off.' });
+  }
+}
 function applyStartup() { if (TEST) return; try { app.setLoginItemSettings({ openAtLogin: !!settings.startup, args: ['--background'] }); } catch (e) { /* not supported here */ } }
 let refreshTray = () => {};
 function buildTray() {
@@ -188,6 +217,10 @@ function buildTray() {
         ...EXTRA_KEYS.map(([k, label]) => ({ label, type: 'radio', checked: settings.extraKey === k, click: () => { settings.extraKey = k; saveSettings(); setExtraKey(k); } })),
         { type: 'separator' }, { label: 'PrintScreen help...', click: () => printScreenHelp() }
       ] },
+      ...(process.platform === 'win32' ? [
+        { label: 'Let Snapdesk use PrintScreen (turns off Windows\' Snipping shortcut)...', click: () => offerPrintScreen(true) },
+        ...(settings.windowsSnipChangedByUs ? [{ label: 'Give PrintScreen back to Windows', click: async () => { await setWindowsSnip(true); } }] : [])
+      ] : []),
       { label: 'Start Snapdesk when I sign in to Windows', type: 'checkbox', checked: !!settings.startup, click: (m) => { settings.startup = m.checked; saveSettings(); applyStartup(); } },
       { label: 'Auto-save every capture', type: 'checkbox', checked: !!settings.autosave, click: (m) => { settings.autosave = m.checked; saveSettings(); } },
       { label: 'Open the screenshots folder', click: () => { try { fs.mkdirSync(shotsDir(), { recursive: true }); } catch (e) { /* ignore */ } shell.openPath(shotsDir()); } },
@@ -228,8 +261,9 @@ app.whenReady().then(() => {
   app.on('web-contents-created', (_e, wc) => { wc.on('will-attach-webview', (ev) => ev.preventDefault()); });
   try { buildTray(); } catch (e) { /* no tray available */ }
   registerHotkeys();
+  setTimeout(() => { offerPrintScreen(false).catch(() => {}); }, 2500);
   if (!process.argv.includes('--background')) openEditor(null);
-  if (TEST) global.__snapdeskTest = { startCapture, editors, hotkeyStatus, setExtraKey, get tray() { return tray; }, settings };
+  if (TEST) global.__snapdeskTest = { startCapture, editors, hotkeyStatus, setExtraKey, parseRegDword, get tray() { return tray; }, settings };
 });
 app.on('second-instance', () => showEditor());
 app.on('window-all-closed', () => { /* stay in the tray so the hotkey keeps working */ });
