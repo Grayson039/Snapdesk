@@ -1,7 +1,7 @@
 {
   "name": "snapdesk",
   "productName": "Snapdesk",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Free, offline screenshot capture and annotation",
   "main": "main.js",
   "author": "Will Grayson",

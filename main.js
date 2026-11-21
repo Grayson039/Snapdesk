@@ -164,6 +164,14 @@ ipcMain.on('set-dirty', (e, d) => { const w = BrowserWindow.fromWebContents(e.se
 ipcMain.handle('info', (e) => (fromEditor(e) ? { hotkeys: hotkeyStatus, autosave: settings.autosave, folder: shotsDir() } : null));
 
 // ---------- tray + hotkeys ----------
+function printScreenHelp() {
+  dialog.showMessageBox({
+    type: 'info', title: 'Use PrintScreen with Snapdesk', buttons: ['Open that Windows setting', 'Close'], defaultId: 0, cancelId: 1,
+    message: hotkeyStatus.printscreen ? 'PrintScreen is set to capture a region with Snapdesk.' : 'Snapdesk could not claim PrintScreen yet.',
+    detail: 'Windows opens its own Snipping Tool when you press PrintScreen. To let Snapdesk have the key, turn that off:\n\nSettings > Accessibility > Keyboard > \"Use the Print screen button to open screen capture\" > Off.\n\nSnapdesk notices the change within a few seconds, so no restart is needed.'
+  }).then((r) => { if (r.response === 0) shell.openExternal('ms-settings:easeofaccess-keyboard'); }).catch(() => {});
+}
+let refreshTray = () => {};
 function buildTray() {
   tray = new Tray(nativeImage.createFromPath(TRAY));
   const rebuild = () => {
@@ -173,19 +181,28 @@ function buildTray() {
       { label: 'Capture the whole screen', accelerator: 'Ctrl+Shift+Z', click: () => startCapture('full', 0) },
       { label: 'Open the editor', click: () => showEditor() },
       { type: 'separator' },
+      { label: hotkeyStatus.printscreen ? 'PrintScreen captures a region (on)' : 'PrintScreen: not active yet. How to fix...', click: () => printScreenHelp() },
       { label: 'Auto-save every capture', type: 'checkbox', checked: !!settings.autosave, click: (m) => { settings.autosave = m.checked; saveSettings(); } },
       { label: 'Open the screenshots folder', click: () => { try { fs.mkdirSync(shotsDir(), { recursive: true }); } catch (e) { /* ignore */ } shell.openPath(shotsDir()); } },
       { type: 'separator' },
       { label: 'Quit Snapdesk', click: () => { quitting = true; app.quit(); } }
     ]));
   };
-  rebuild(); tray.on('click', () => showEditor());
+  refreshTray = rebuild; rebuild(); tray.on('click', () => showEditor());
 }
 function registerHotkeys() {
   const reg = (name, key, fn) => { let ok = false; try { ok = globalShortcut.register(key, fn); } catch (e) { ok = false; } hotkeyStatus[name] = ok ? key : null; };
   reg('region', 'CommandOrControl+Shift+X', () => startCapture('region', 0));
   reg('full', 'CommandOrControl+Shift+Z', () => startCapture('full', 0));
-  reg('printscreen', 'PrintScreen', () => startCapture('region', 0)); // Windows may keep this for itself; that is fine
+  tryPrintScreen();
+  // Windows may hold PrintScreen for its own Snipping Tool. Keep trying quietly so a changed setting takes effect without a restart.
+  if (!hotkeyStatus.printscreen) { psTimer = setInterval(() => { if (tryPrintScreen()) { clearInterval(psTimer); psTimer = null; } }, 4000); if (psTimer.unref) psTimer.unref(); }
+}
+let psTimer = null;
+function tryPrintScreen() {
+  if (hotkeyStatus.printscreen) return true;
+  let ok = false; try { ok = globalShortcut.register('PrintScreen', () => startCapture('region', 0)); } catch (e) { ok = false; }
+  hotkeyStatus.printscreen = ok ? 'PrintScreen' : null; if (ok) refreshTray(); return ok;
 }
 
 // ---------- lifecycle ----------

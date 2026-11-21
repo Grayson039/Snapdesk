@@ -5,7 +5,7 @@ Free, offline screenshot capture and annotation for Windows. Built on Electron; 
 ## Use
 - **Ctrl+Shift+X** anywhere: the screen freezes, drag a region, and it opens in the editor.
 - **Ctrl+Shift+Z**: capture the whole screen (the monitor under your mouse).
-- **PrintScreen**: also captures a region, *if* Windows lets the app have it.
+- **PrintScreen**: also captures a region. Tray > "PrintScreen" explains and opens the Windows setting if Snipping Tool is in the way; the app retries on its own.
   (Settings > Accessibility > Keyboard > "Use the Print screen button to open screen capture" must be off.)
 - Space in the capture overlay = whole screen. Esc or right-click = cancel.
 - The app lives in the system tray. Closing the editor window does not quit it; use tray > Quit.
