@@ -26,7 +26,7 @@ jobs:
         with:
           name: Snapdesk-Setup
           path: dist/Snapdesk-Setup-*.exe
-      - name: Attach to a Release (private repo: only you can download it)
+      - name: Attach the installer to a Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
