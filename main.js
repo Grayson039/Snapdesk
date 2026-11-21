@@ -12,12 +12,12 @@ const TRAY = path.join(__dirname, 'assets', 'tray.png');
 
 if (!TEST && !app.requestSingleInstanceLock()) { app.quit(); }
 
-let tray = null, capturing = false, quitting = false, settings = { autosave: false };
+let tray = null, capturing = false, quitting = false, settings = { autosave: false, extraKey: 'PrintScreen', startup: null };
 const hotkeyStatus = {};
 
 // ---------- settings ----------
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json');
-function loadSettings() { try { settings = Object.assign({ autosave: false }, JSON.parse(fs.readFileSync(settingsFile(), 'utf8'))); } catch (e) { /* first run */ } }
+function loadSettings() { try { settings = Object.assign({ autosave: false, extraKey: 'PrintScreen', startup: null }, JSON.parse(fs.readFileSync(settingsFile(), 'utf8'))); } catch (e) { /* first run */ } }
 function saveSettings() { try { fs.mkdirSync(path.dirname(settingsFile()), { recursive: true }); fs.writeFileSync(settingsFile(), JSON.stringify(settings)); } catch (e) { /* ignore */ } }
 const shotsDir = () => (TEST && process.env.SNAPDESK_SAVE_DIR) || path.join(app.getPath('pictures'), 'Snapdesk');
 function stamp() { const d = new Date(), p = (n) => String(n).padStart(2, '0'); return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
@@ -164,13 +164,16 @@ ipcMain.on('set-dirty', (e, d) => { const w = BrowserWindow.fromWebContents(e.se
 ipcMain.handle('info', (e) => (fromEditor(e) ? { hotkeys: hotkeyStatus, autosave: settings.autosave, folder: shotsDir() } : null));
 
 // ---------- tray + hotkeys ----------
+const EXTRA_KEYS = [['PrintScreen', 'PrintScreen'], ['ScrollLock', 'Scroll Lock'], ['Pause', 'Pause / Break'], ['CommandOrControl+PrintScreen', 'Ctrl + PrintScreen']];
+const keyLabel = (k) => (EXTRA_KEYS.find((x) => x[0] === k) || [k, k])[1];
 function printScreenHelp() {
   dialog.showMessageBox({
     type: 'info', title: 'Use PrintScreen with Snapdesk', buttons: ['Open that Windows setting', 'Close'], defaultId: 0, cancelId: 1,
-    message: hotkeyStatus.printscreen ? 'PrintScreen is set to capture a region with Snapdesk.' : 'Snapdesk could not claim PrintScreen yet.',
-    detail: 'Windows opens its own Snipping Tool when you press PrintScreen. To let Snapdesk have the key, turn that off:\n\nSettings > Accessibility > Keyboard > \"Use the Print screen button to open screen capture\" > Off.\n\nSnapdesk notices the change within a few seconds, so no restart is needed.'
+    message: hotkeyStatus.extra ? keyLabel(settings.extraKey) + ' captures a region with Snapdesk.' : 'Snapdesk could not claim ' + keyLabel(settings.extraKey) + ' yet.',
+    detail: 'Windows opens its own Snipping Tool when you press PrintScreen. To let Snapdesk have the key, turn that off:\n\nSettings > Accessibility > Keyboard > \"Use the Print screen button to open screen capture\" > Off.\n\nSnapdesk notices the change within a few seconds, so no restart is needed. If PrintScreen still will not work on your keyboard, pick another key from the tray menu under \"Capture key\".'
   }).then((r) => { if (r.response === 0) shell.openExternal('ms-settings:easeofaccess-keyboard'); }).catch(() => {});
 }
+function applyStartup() { if (TEST) return; try { app.setLoginItemSettings({ openAtLogin: !!settings.startup, args: ['--background'] }); } catch (e) { /* not supported here */ } }
 let refreshTray = () => {};
 function buildTray() {
   tray = new Tray(nativeImage.createFromPath(TRAY));
@@ -181,7 +184,11 @@ function buildTray() {
       { label: 'Capture the whole screen', accelerator: 'Ctrl+Shift+Z', click: () => startCapture('full', 0) },
       { label: 'Open the editor', click: () => showEditor() },
       { type: 'separator' },
-      { label: hotkeyStatus.printscreen ? 'PrintScreen captures a region (on)' : 'PrintScreen: not active yet. How to fix...', click: () => printScreenHelp() },
+      { label: 'Capture key: ' + keyLabel(settings.extraKey) + (hotkeyStatus.extra ? '  (on)' : '  (not active yet)'), submenu: [
+        ...EXTRA_KEYS.map(([k, label]) => ({ label, type: 'radio', checked: settings.extraKey === k, click: () => { settings.extraKey = k; saveSettings(); setExtraKey(k); } })),
+        { type: 'separator' }, { label: 'PrintScreen help...', click: () => printScreenHelp() }
+      ] },
+      { label: 'Start Snapdesk when I sign in to Windows', type: 'checkbox', checked: !!settings.startup, click: (m) => { settings.startup = m.checked; saveSettings(); applyStartup(); } },
       { label: 'Auto-save every capture', type: 'checkbox', checked: !!settings.autosave, click: (m) => { settings.autosave = m.checked; saveSettings(); } },
       { label: 'Open the screenshots folder', click: () => { try { fs.mkdirSync(shotsDir(), { recursive: true }); } catch (e) { /* ignore */ } shell.openPath(shotsDir()); } },
       { type: 'separator' },
@@ -194,27 +201,35 @@ function registerHotkeys() {
   const reg = (name, key, fn) => { let ok = false; try { ok = globalShortcut.register(key, fn); } catch (e) { ok = false; } hotkeyStatus[name] = ok ? key : null; };
   reg('region', 'CommandOrControl+Shift+X', () => startCapture('region', 0));
   reg('full', 'CommandOrControl+Shift+Z', () => startCapture('full', 0));
-  tryPrintScreen();
-  // Windows may hold PrintScreen for its own Snipping Tool. Keep trying quietly so a changed setting takes effect without a restart.
-  if (!hotkeyStatus.printscreen) { psTimer = setInterval(() => { if (tryPrintScreen()) { clearInterval(psTimer); psTimer = null; } }, 4000); if (psTimer.unref) psTimer.unref(); }
+  setExtraKey(settings.extraKey);
 }
-let psTimer = null;
-function tryPrintScreen() {
-  if (hotkeyStatus.printscreen) return true;
-  let ok = false; try { ok = globalShortcut.register('PrintScreen', () => startCapture('region', 0)); } catch (e) { ok = false; }
-  hotkeyStatus.printscreen = ok ? 'PrintScreen' : null; if (ok) refreshTray(); return ok;
+let psTimer = null, currentExtra = null;
+function tryExtraKey() {
+  const key = settings.extraKey; if (!key) return false; if (hotkeyStatus.extra && currentExtra === key) return true;
+  let ok = false; try { ok = globalShortcut.register(key, () => startCapture('region', 0)); } catch (e) { ok = false; }
+  if (ok) { currentExtra = key; hotkeyStatus.extra = key; } else hotkeyStatus.extra = null;
+  refreshTray(); return ok;
+}
+// Windows may hold PrintScreen for its own Snipping Tool. Keep trying quietly, so changing that setting works without a restart.
+function setExtraKey(key) {
+  if (psTimer) { clearInterval(psTimer); psTimer = null; }
+  if (currentExtra) { try { globalShortcut.unregister(currentExtra); } catch (e) { /* ignore */ } currentExtra = null; }
+  hotkeyStatus.extra = null; settings.extraKey = key;
+  if (!tryExtraKey()) { psTimer = setInterval(() => { if (tryExtraKey()) { clearInterval(psTimer); psTimer = null; } }, 4000); if (psTimer.unref) psTimer.unref(); }
 }
 
 // ---------- lifecycle ----------
 app.whenReady().then(() => {
   loadSettings();
+  if (settings.startup === null) { settings.startup = true; saveSettings(); } // a hotkey tool must be running to work; the tray menu can turn this off
+  applyStartup();
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false));
   session.defaultSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (d, cb) => cb({ cancel: true })); // belt and braces: no network, ever
   app.on('web-contents-created', (_e, wc) => { wc.on('will-attach-webview', (ev) => ev.preventDefault()); });
   try { buildTray(); } catch (e) { /* no tray available */ }
   registerHotkeys();
   if (!process.argv.includes('--background')) openEditor(null);
-  if (TEST) global.__snapdeskTest = { startCapture, editors, hotkeyStatus, get tray() { return tray; }, settings };
+  if (TEST) global.__snapdeskTest = { startCapture, editors, hotkeyStatus, setExtraKey, get tray() { return tray; }, settings };
 });
 app.on('second-instance', () => showEditor());
 app.on('window-all-closed', () => { /* stay in the tray so the hotkey keeps working */ });

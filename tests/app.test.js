@@ -75,6 +75,13 @@ const f = (x, y) => [(x * 7) % 256, (y * 5) % 256, ((x + y) * 3) % 256];
   const nBefore = fs.readdirSync(SAVE).filter((n) => /^Snapdesk-/.test(n)).length;
   await capture('full'); const auto = await waitFor(() => fs.readdirSync(SAVE).filter((n) => /^Snapdesk-/.test(n)).length > nBefore, 6000); ok(!!auto, 'auto-save writes every capture to the screenshots folder');
 
+  // ---- chooseable capture key + start-with-Windows default ----
+  ok(await app.evaluate(() => global.__snapdeskTest.hotkeyStatus.extra === 'PrintScreen'), 'PrintScreen is the default extra capture key');
+  await app.evaluate(() => global.__snapdeskTest.setExtraKey('ScrollLock'));
+  ok(await app.evaluate(() => global.__snapdeskTest.hotkeyStatus.extra === 'ScrollLock'), 'switching the capture key re-registers it');
+  ok(await app.evaluate(({ globalShortcut }) => globalShortcut.isRegistered('ScrollLock') && !globalShortcut.isRegistered('PrintScreen')), 'old key released, new key held');
+  ok(await app.evaluate(() => global.__snapdeskTest.settings.startup === true), 'start-with-Windows defaults on at first run');
+
   ok(errs.length === 0, 'no renderer errors ' + errs.join(' | '));
   console.log(`\n${pass} passed, ${fail} failed`);
   await app.close(); await br.close(); process.exit(fail ? 1 : 0);

@@ -5,7 +5,8 @@ Free, offline screenshot capture and annotation for Windows. Built on Electron; 
 ## Use
 - **Ctrl+Shift+X** anywhere: the screen freezes, drag a region, and it opens in the editor.
 - **Ctrl+Shift+Z**: capture the whole screen (the monitor under your mouse).
-- **PrintScreen**: also captures a region. Tray > "PrintScreen" explains and opens the Windows setting if Snipping Tool is in the way; the app retries on its own.
+- **PrintScreen** (or another key you pick in the tray under "Capture key") also captures a region. If Windows keeps PrintScreen for Snipping Tool, the tray explains and opens the Windows setting; Snapdesk retries on its own.
+- Snapdesk starts when you sign in to Windows (tray menu turns this off), so the hotkey is always ready.
   (Settings > Accessibility > Keyboard > "Use the Print screen button to open screen capture" must be off.)
 - Space in the capture overlay = whole screen. Esc or right-click = cancel.
 - The app lives in the system tray. Closing the editor window does not quit it; use tray > Quit.
