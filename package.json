@@ -43,7 +43,7 @@
         }
       ],
       "icon": "assets/icon.png",
-      "signAndEditExecutable": false,
+      "signAndEditExecutable": true,
       "artifactName": "Snapdesk-Setup-${version}.${ext}"
     },
     "nsis": {

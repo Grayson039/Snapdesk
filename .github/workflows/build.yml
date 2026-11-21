@@ -19,7 +19,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build the installer (real Windows build, so the exe gets its icon and version info)
-        run: npx electron-builder --win nsis --x64 --publish never -c.win.signAndEditExecutable=true
+        run: npx electron-builder --win nsis --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"   # no code-signing certificate; the installer is unsigned
       - uses: actions/upload-artifact@v4
