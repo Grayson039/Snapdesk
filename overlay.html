@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src blob: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Snapdesk capture</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000;cursor:crosshair;user-select:none;font:13px "Segoe UI",system-ui,sans-serif}
+canvas{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+#hint{position:fixed;top:18px;left:50%;transform:translateX(-50%);background:rgba(15,18,24,.9);color:#eef1f6;border:1px solid rgba(255,255,255,.18);padding:8px 16px;border-radius:999px;pointer-events:none;box-shadow:0 10px 30px rgba(0,0,0,.5);white-space:nowrap;transition:opacity .2s}
+#hint b{color:#ff8a5c;font-weight:600}
+</style></head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">Drag to capture <b>·</b> <b>Space</b> whole screen <b>·</b> <b>Esc</b> cancel</div>
+<script>
+(function () {
+  var c = document.getElementById('c'), g = c.getContext('2d'), hint = document.getElementById('hint');
+  var img = null, imgW = 1, imgH = 1, vw = 1, vh = 1, dpr = 1, start = null, sel = null, mouse = { x: -1, y: -1 }, dragging = false;
+  function size() { vw = innerWidth; vh = innerHeight; dpr = window.devicePixelRatio || 1; c.width = Math.round(vw * dpr); c.height = Math.round(vh * dpr); draw(); }
+  addEventListener('resize', size);
+  function norm(a, b) { return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }; }
+  function draw() {
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, vw, vh);
+    if (!img) return;
+    g.imageSmoothingEnabled = true; g.drawImage(img, 0, 0, vw, vh);
+    g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 0, vw, vh);
+    if (sel && sel.w > 0 && sel.h > 0) {
+      var kx = imgW / vw, ky = imgH / vh;
+      g.drawImage(img, sel.x * kx, sel.y * ky, sel.w * kx, sel.h * ky, sel.x, sel.y, sel.w, sel.h);
+      g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.strokeRect(sel.x + .5, sel.y + .5, sel.w, sel.h);
+      g.strokeStyle = 'rgba(255,106,61,.95)'; g.setLineDash([6, 4]); g.lineWidth = 1; g.strokeRect(sel.x - .5, sel.y - .5, sel.w + 2, sel.h + 2); g.setLineDash([]);
+      var label = Math.round(sel.w * kx) + ' × ' + Math.round(sel.h * ky);
+      g.font = '600 12px "Segoe UI",system-ui,sans-serif'; var tw = g.measureText(label).width + 16, ty = sel.y > 34 ? sel.y - 30 : sel.y + sel.h + 8;
+      g.fillStyle = 'rgba(15,18,24,.92)'; g.beginPath(); g.roundRect(sel.x, ty, tw, 22, 11); g.fill();
+      g.fillStyle = '#fff'; g.textBaseline = 'middle'; g.fillText(label, sel.x + 8, ty + 11.5);
+    } else if (mouse.x >= 0) {
+      g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.beginPath(); g.moveTo(mouse.x + .5, 0); g.lineTo(mouse.x + .5, vh); g.moveTo(0, mouse.y + .5); g.lineTo(vw, mouse.y + .5); g.stroke();
+    }
+  }
+  window.snapOverlay.onShot(function (d) {
+    imgW = d.imgW; imgH = d.imgH;
+    var url = URL.createObjectURL(new Blob([d.jpg], { type: 'image/jpeg' })); var i = new Image();
+    i.onload = function () { img = i; size(); }; i.src = url;
+  });
+  function done(p) { window.snapOverlay.done(p); }
+  addEventListener('mousedown', function (e) { if (e.button !== 0) { done(null); return; } dragging = true; start = { x: e.clientX, y: e.clientY }; sel = { x: start.x, y: start.y, w: 0, h: 0 }; hint.style.opacity = '0'; draw(); });
+  addEventListener('mousemove', function (e) { mouse = { x: e.clientX, y: e.clientY }; if (dragging) sel = norm(start, mouse); draw(); });
+  addEventListener('mouseup', function (e) {
+    if (!dragging) return; dragging = false; sel = norm(start, { x: e.clientX, y: e.clientY });
+    if (sel.w < 4 || sel.h < 4) { sel = null; hint.style.opacity = '1'; draw(); return; } // a stray click is not a capture
+    done({ x: sel.x, y: sel.y, w: sel.w, h: sel.h, vw: vw, vh: vh });
+  });
+  addEventListener('keydown', function (e) { if (e.key === 'Escape') done(null); else if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); done({ full: true, vw: vw, vh: vh }); } });
+  addEventListener('contextmenu', function (e) { e.preventDefault(); done(null); });
+  size();
+})();
+</script></body></html>

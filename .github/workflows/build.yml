@@ -1,0 +1,36 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to attach the installer to a Release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the installer (real Windows build, so the exe gets its icon and version info)
+        run: npx electron-builder --win nsis --x64 --publish never -c.win.signAndEditExecutable=true
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"   # no code-signing certificate; the installer is unsigned
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snapdesk-Setup
+          path: dist/Snapdesk-Setup-*.exe
+      - name: Attach to a Release (private repo: only you can download it)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          TAG="v${VER}-build.${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" dist/Snapdesk-Setup-*.exe --title "Snapdesk ${VER} (build ${GITHUB_RUN_NUMBER})" --notes "Unsigned Windows installer. SmartScreen may say 'unknown publisher': More info, then Run anyway."
